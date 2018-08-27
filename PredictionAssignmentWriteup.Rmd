@@ -144,7 +144,7 @@ train_in_RF$finalModel
 
 ```
 
-#### *Cross-validate the RM model that has been fitted on the training partition against the validation parition:*
+#### *Cross-validate the RF model that has been fitted on the training partition against the validation parition:*
 ```{r chkRF, echo = TRUE, message = FALSE}
 
 predict_RF <- predict(train_in_RF, train_out)
