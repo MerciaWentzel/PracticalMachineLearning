@@ -1,0 +1,209 @@
+---
+title: "Prediction Assignment Writeup"
+author: 'Author: Mercia Carolina Wentzel'
+subtitle: Practical Machine Learning Project - Data Science Specialization @ Coursera.org (Johns
+  Hopkins University)
+---
+
+##--------------------------------------------------------------------------------------------
+# Executive Summary
+
+In a 2013 study named "Qualitative Activity Recognition of Weight Lifting Exercises" by Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H, the authors investigated whether quality rather than quantity of exercise could be assessed from devices such as Jawbone Up, Nike Fuelband and Fitbit. During the study, data was collected from accellerometers on the belt, forearm, arm, and dumbell of 6 volunteers who were asked to perform barbell lifts both correctly and in different incorrect ways. Information about the study, including a link to the weight lifting exercises (WLE) dataset, were published here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har.
+
+For this project, training and test datasets originating from the published dataset mentioned above were used to (a) build a model that can predict the way in which barbell lifts are performed, and (b) test the model.
+
+```{r LIB, echo = FALSE, message = FALSE}
+
+library(caret) # for data splitting, model fitting, cross validation and prediction funtionality
+library(rattle) # for fancyRpartPlot function
+library(knitr) # for kable function
+
+```
+
+##--------------------------------------------------------------------------------------------
+# Get and clean training data
+
+#### *Read training data and remove columns that contain no data as well as static data columns:*
+```{r TRAIN, echo = TRUE, message = FALSE}
+
+train_orig <- read.csv("pml-training.csv")
+dim(train_orig)
+count_nodata <- sapply(train_orig, function(y) length(which(is.na(y))) + length(which(y=="")))
+unique(count_nodata)
+train_bool <- sapply(
+    train_orig, function(y) as.logical(length(which(is.na(y))) + length(which(y=="")) > 0))
+train_clean <- train_orig[, -which(train_bool)]
+colnames(train_clean)
+head(rbind(head(train_clean[,1:7], 3), tail(train_clean[,1:7], 3)))
+train_clean <- train_clean[, -c(1:7)]
+dim(train_clean)
+count_nodata <- sapply(train_clean, function(y) length(which(is.na(y))) + length(which(y=="")))
+unique(count_nodata)
+
+```
+
+##--------------------------------------------------------------------------------------------
+# Get and clean test data
+
+#### *Read test data and remove same columns as those that were removed from training dataset:*
+```{r TEST, echo = TRUE, message = FALSE}
+
+test_orig <- read.csv("pml-testing.csv")
+dim(test_orig)
+test_clean <- test_orig[, -which(train_bool)]
+test_clean <- test_clean[, -c(1:7)]
+dim(test_clean)
+count_nodata <- sapply(test_clean, function(y) length(which(is.na(y))) + length(which(y=="")))
+unique(count_nodata)
+
+```
+
+##--------------------------------------------------------------------------------------------
+# Partition training data
+
+#### *Split the training dataset into training and validation partitions:*
+```{r SPLIT, echo = TRUE, message = FALSE}
+
+set.seed(12345)
+train_clean_partition <- createDataPartition(train_clean$classe, p = 0.6, list = FALSE)
+train_in <- train_clean[train_clean_partition, ]
+train_out <- train_clean[-train_clean_partition, ]
+
+```
+
+##--------------------------------------------------------------------------------------------
+# Classification and regression tree (CART) model
+
+#### *Fit a CART model on the training partition:*
+```{r fitCART, echo = TRUE, message = FALSE}
+
+start_CART <- Sys.time()
+
+set.seed(12345)
+ctl <- trainControl(method = "cv", number = 5) ## 5 resamplings using "cv" method
+train_in_CART <- train(classe ~ ., data = train_in, method = "rpart", trControl = ctl)
+fancyRpartPlot(train_in_CART$finalModel)
+
+```
+
+#### *Cross-validate the CART model that has been fitted on the training partition against the validation partition:*
+```{r chkCART, echo = TRUE, message = FALSE}
+
+predict_CART <- predict(train_in_CART, train_out)
+matrix_CART <- confusionMatrix(train_out$classe, predict_CART)
+matrix_CART
+
+difftime_CART <- round(difftime(Sys.time(), start_CART, units = "mins"), 0)
+
+```
+
+#### *Proceed to see if model accuracy can be improved:*
+
+##--------------------------------------------------------------------------------------------
+# Generalized Boosted Model (GBM)
+
+#### *Fit a GBM on the training partition:*
+```{r fitGBM, echo = TRUE, message = FALSE}
+
+start_GBM <- Sys.time()
+
+set.seed(12345)
+ctl <- trainControl(method = "repeatedcv", number = 5,  ## 5 resamplings using "repeatcv" method
+                    repeats = 1)
+train_in_GBM <- train(classe ~ ., data = train_in, method = "gbm", trControl = ctl, 
+                      verbose = FALSE)
+train_in_GBM$finalModel
+
+```
+
+#### *Cross-validate the GBM that has been fitted on the training partition against the validation parition:*
+```{r chkGBM, echo = TRUE, message = FALSE}
+
+predict_GBM <- predict(train_in_GBM, train_out)
+matrix_GBM <- confusionMatrix(train_out$classe, predict_GBM)
+matrix_GBM
+
+difftime_GBM <- round(difftime(Sys.time(), start_GBM, units = "mins"), 0)
+
+```
+
+#### *Model accuracy has been improved significantly. Proceed to see if it can be improved further:*
+
+##--------------------------------------------------------------------------------------------
+# Random Forest (RF) model
+
+#### *Fit a RF model on the training partition:*
+```{r fitRF, echo = TRUE, message = FALSE}
+
+start_RF <- Sys.time()
+
+set.seed(12345)
+ctl <- trainControl(method = "cv", number = 5) ## 5 resamplings using "cv" method
+train_in_RF <- train(classe ~ ., data = train_in, method = "rf", trControl = ctl)
+train_in_RF$finalModel
+
+```
+
+#### *Cross-validate the RM model that has been fitted on the training partition against the validation parition:*
+```{r chkRF, echo = TRUE, message = FALSE}
+
+predict_RF <- predict(train_in_RF, train_out)
+matrix_RF <- confusionMatrix(train_out$classe, predict_RF)
+matrix_RF
+
+difftime_RF <- round(difftime(Sys.time(), start_RF, units = "mins"), 0)
+
+```
+
+#### *Model accuracy has been improved even further. Proceed to tabulate results and select a model:*
+
+##--------------------------------------------------------------------------------------------
+# Comparison and selection
+
+#### *Table:*
+```{r COMPARE, echo = FALSE, message = FALSE}
+
+matrix_compare <- matrix(byrow = TRUE, nrow = 4, ncol = 4, 
+                         c("Accuracy", "49.94%", "96.25%", "99.22%",
+                           "Out of sample error", "50.06%", "3.75%", "0.78%",
+                           "No Information Rate", "40.57%", "28.66%", "28.55%",
+                           "Time (minutes)", difftime_CART, difftime_GBM, difftime_RF))
+colnames(matrix_compare) <- c("Metric", "CART", "GBM", "RF")
+kable(matrix_compare)
+
+```
+
+#### *Comparison:*
+
+The classification and regression tree (CART) model has performed quite poorly in terms of accuracy, so it has not been considered any further. Both the generalized boosted model (GBM) and the random forest (RF) model achieved over 96% accuracy, with RF achieving near perfection at more than 99%. 
+
+Here, the out of sample errors have been estimated as the respective reciprocates of the accuracy percentages.
+
+Both "no information" rates were between 28% and 29%, which I interpreted as low enough to warrant acceptance of the accuracy percentages. 
+
+Notably, the execution time of GBM is about twice as fast as the execution time of RF. This is by no means a proper CPU performance test, but it does give a comparitive indication of execution times.
+
+#### *Selection:*
+
+Since execution time has not been an issue for this project, the highly accurate RF model has been selected to predict the way in which barbell lifts were performed as per the test dataset. 
+
+##--------------------------------------------------------------------------------------------
+# Prediction
+
+#### *Preamble:*
+
+As specified by the study authors, the five ways in which exercises can be performed are:  
+* correctly (Class A),  
+* throwing the elbows to the front (Class B),  
+* lifting the dumbbell only halfway (Class C),  
+* lowering the dumbbell only halfway (Class D), and  
+* throwing the hips to the front (Class E).
+
+#### *Predict ways in which 20 respective exercises in the test dataset were performed:*
+```{r PREDICT, echo = TRUE, message = FALSE}
+
+predict(train_in_RF, test_clean)
+
+```
+
+##--------------------------------------------------------------------------------------------
